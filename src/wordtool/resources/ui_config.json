@@ -2,44 +2,41 @@
     "titles": {
         "title1": {
             "format": "一、",
-            "font": "宋体",
-            "size": "三号 (16pt)",
-            "bold": true
+            "font": "黑体",
+            "size": "四号 (14pt)",
+            "bold": false
         },
         "title2": {
             "format": "（一）",
-            "font": "宋体",
-            "size": "小三号 (15pt)",
-            "bold": true
+            "font": "黑体",
+            "size": "五号 (10.5pt)",
+            "bold": false
         },
         "title3": {
-            "format": "（1）",
+            "format": "1.",
             "font": "宋体",
-            "size": "四号 (14pt)",
-            "bold": true
+            "size": "五号 (10.5pt)",
+            "bold": false
         },
         "title4": {
-            "format": "（I）",
+            "format": "（1）",
             "font": "宋体",
-            "size": "小四号 (12pt)",
-            "bold": true
+            "size": "小五号 (9pt)",
+            "bold": false
         }
     },
     "body": {
         "font": "宋体",
-        "size": "小四号 (12pt)",
+        "size": "五号 (10.5pt)",
+        "bold": false,
+        "line_rule": "固定值",
+        "spacing": "23"
+    },
+    "caption": {
+        "font": "宋体",
+        "size": "小五号 (9pt)",
         "bold": false,
         "line_rule": "多倍行距",
-        "spacing": "1.25"
-    },
-    "figure": {
-        "font": "宋体",
-        "size": "小五号 (9pt)",
-        "bold": false
-    },
-    "table": {
-        "font": "宋体",
-        "size": "小五号 (9pt)",
-        "bold": false
+        "spacing": "1"
     }
 }

@@ -22,27 +22,24 @@ class ConfigManager:
         # ========== 默认配置结构 ==========
         return {
             "titles": {
-                "title1": {"format": "一、", "font": "宋体", "size": "三号 (16pt)", "bold": False},
-                "title2": {"format": "二、", "font": "宋体", "size": "小三号 (15pt)", "bold": False},
-                "title3": {"format": "三、", "font": "宋体", "size": "四号 (14pt)", "bold": False},
-                "title4": {"format": "四、", "font": "宋体", "size": "小四号 (12pt)", "bold": False},
+                "title1": {"format": "一、", "font": "黑体", "size": "四号 (14pt)", "bold": False},
+                "title2": {"format": "（一）", "font": "黑体", "size": "五号 (10.5pt)", "bold": False},
+                "title3": {"format": "1.", "font": "宋体", "size": "五号 (10.5pt)", "bold": False},
+                "title4": {"format": "（1）", "font": "宋体", "size": "五号 (10.5pt)", "bold": False},
             },
             "body": {
                 "font": "宋体",
-                "size": "小四号 (12pt)",
+                "size": "五号 (10.5pt)",
                 "bold": False,
                 "line_rule": "多倍行距",
                 "spacing": "1.25",  # 1.25倍行距
             },
-            "figure": {
+            "caption": {
                 "font": "宋体",
                 "size": "小五号 (9pt)",
                 "bold": False,
-            },
-            "table": {
-                "font": "宋体",
-                "size": "小五号 (9pt)",
-                "bold": False,
+                "line_rule": "多倍行距",
+                "spacing": "1.25"
             }
         }
 

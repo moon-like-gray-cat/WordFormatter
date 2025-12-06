@@ -6,6 +6,7 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.shared import RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.enum.text import WD_LINE_SPACING
 
 TITLE_FORMATS = [
     "一", "一、", "（一）", "（一）、", "（一）.",
@@ -109,33 +110,48 @@ class WordFormatter:
     # ----------------------------------------------------------------------
     # 应用样式到段落
     # ----------------------------------------------------------------------
-    def _apply_style(self, paragraph, level, heading_style=True):
-        style_cfg = self._get_style(level)
+    def _apply_style(self, paragraph, level, heading_style=True, caption_type=None):
+        """
+        paragraph: 要设置样式的段落
+        level: 标题等级，0 表示正文或图表标题
+        caption_type: 可选 "caption"，表示图表标题
+        """
+        # ---------------- 获取样式配置 ----------------
+        if level == 0 and caption_type == "caption":
+            # 使用 caption 配置
+            style_cfg = self.config.get("caption", {})
+            # # 保证图题不会和图片重叠
+            # paragraph.paragraph_format.space_before = Pt(6)  # 图题上方空白
+            # paragraph.paragraph_format.space_after = Pt(3)  # 图题下方空白
+        else:
+            style_cfg = self._get_style(level)
+
+        # 字体与字号
         font_name = style_cfg.get("font", "宋体")
         size_str = style_cfg.get("size", "12")
         m = re.search(r"\(([\d.]+)pt\)", size_str)
         size = float(m.group(1)) if m else 12
         bold = bool(style_cfg.get("bold", False))
 
-        # 设置段落样式
+        # 设置段落样式（标题等级大于0才使用 Heading）
         if heading_style and level > 0:
-            # 使用 Word 内置 Heading 样式
             paragraph.style = f'Heading {level}'
 
         # 设置 run 样式
         for run in paragraph.runs:
             self._set_run_style(run, font_name, size, bold)
 
-        # 设置正文行间距
-        if level == 0 and self.body.get("line_rule"):
-            spacing = float(self.body.get("spacing", "1.25"))
-            if self.body.get("line_rule") == "多倍行距":
+        # ---------------- 设置行距 ----------------
+        if level == 0:
+            line_rule = style_cfg.get("line_rule", "多倍行距")
+            spacing = float(style_cfg.get("spacing", 1.25))
+
+            if line_rule == "多倍行距":
+                paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
                 paragraph.paragraph_format.line_spacing = spacing
             else:  # 固定值（磅）
-                paragraph.paragraph_format.line_spacing_rule = None
-                paragraph.paragraph_format.space_before = Pt(spacing)
-                paragraph.paragraph_format.space_after = Pt(spacing)
-
+                paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                paragraph.paragraph_format.line_spacing = Pt(spacing)
     # ----------------------------------------------------------------------
     # 将英文括号转中文括号
     # ----------------------------------------------------------------------
@@ -144,31 +160,29 @@ class WordFormatter:
         return text
 
     # ----------------------------------------------------------------------
-    # 预处理图题和表题
+    # 处理图题和表题
     # ----------------------------------------------------------------------
     def _preprocess_captions(self, doc):
         """
-        只处理已有图题和表题
-        - 图片下方已有图题的段落，设置样式和居中
-        - 表格上方已有表题的段落，设置样式和居中
+        处理已有图题和表题：
+        - 图片下方图题
+        - 表格上方表题
         """
         paragraphs = doc.paragraphs
         for i, para in enumerate(paragraphs):
             # 图片下方图题
             if para._element.xpath(".//w:drawing"):
-                # 检查下一段是否以“图”开头
                 if i + 1 < len(paragraphs) and paragraphs[i + 1].text.strip().startswith("图"):
                     caption_para = paragraphs[i + 1]
-                    self._apply_style(caption_para, level=0)
+                    self._apply_style(caption_para, level=0, caption_type="caption")
                     caption_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
             # 表格上方表题
             next_elem = para._element.getnext()
             if next_elem is not None and next_elem.tag.endswith("tbl"):
-                # 检查当前段落是否以“表”开头
                 if para.text.strip().startswith("表"):
                     caption_para = para
-                    self._apply_style(caption_para, level=0)
+                    self._apply_style(caption_para, level=0, caption_type="caption")
                     caption_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
     # ----------------------------------------------------------------------
@@ -184,13 +198,14 @@ class WordFormatter:
                     if not run._element.xpath(".//w:drawing"):
                         run.text = self._normalize_brackets(run.text)
 
-            # 2. 处理已有图题和表题
-            self._preprocess_captions(doc)
+
 
             # 3. 应用样式（标题和正文）
             for para in doc.paragraphs:
                 level = self._detect_level(para.text)
                 self._apply_style(para, level)
+            # 2. 处理已有图题和表题
+            self._preprocess_captions(doc)
 
             doc.save(output_path)
             return True

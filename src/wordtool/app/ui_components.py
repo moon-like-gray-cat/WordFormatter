@@ -7,6 +7,7 @@ from pathlib import Path
 from ..config import ConfigManager
 from ..config import CONFIG_PATH
 
+
 def resource_path(relative_path: str) -> str:
     """
     获取资源的绝对路径
@@ -18,11 +19,12 @@ def resource_path(relative_path: str) -> str:
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
 
+
 class WordFormatterUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Word 格式化工具")
-        self.root.geometry("950x600")
+        self.root.geometry("1000x650")  # 增加窗口尺寸
 
         # 设置图标
         icon_path = resource_path("icon.ico")
@@ -31,7 +33,6 @@ class WordFormatterUI:
         else:
             print(f"图标文件不存在: {icon_path}")
 
-            
         # 可识别标题格式
         self.title_formats = [
             "一", "一、", "（一）", "（一）、", "（一）.",
@@ -79,6 +80,7 @@ class WordFormatterUI:
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill="both", expand=True)
 
+        # 调整列权重，使两侧均匀分布
         main_frame.grid_columnconfigure(0, weight=1)
         main_frame.grid_columnconfigure(1, weight=1)
 
@@ -98,11 +100,11 @@ class WordFormatterUI:
 
             ttk.Label(row, text=level_name, width=8).pack(side="left")
             ttk.Label(row, text="格式").pack(side="left", padx=(5, 2))
-            cb_format = ttk.Combobox(row, values=self.title_formats, width=6)
+            cb_format = ttk.Combobox(row, values=self.title_formats, width=8)
             cb_format.pack(side="left", padx=2)
 
             ttk.Label(row, text="字体").pack(side="left", padx=(5, 2))
-            cb_font = ttk.Combobox(row, values=["宋体", "黑体", "微软雅黑", "楷体"], width=8)
+            cb_font = ttk.Combobox(row, values=["宋体", "黑体", "微软雅黑", "楷体"], width=10)
             cb_font.pack(side="left", padx=2)
 
             ttk.Label(row, text="字号").pack(side="left", padx=(5, 2))
@@ -142,47 +144,85 @@ class WordFormatterUI:
         bf2 = ttk.Frame(lf)
         bf2.pack(fill="x", pady=5)
         ttk.Label(bf2, text="正文行距").pack(side="left")
-        self.body_line_rule = ttk.Combobox(bf2, values=["固定值", "多倍行距"], width=12)
+        self.body_line_rule = ttk.Combobox(bf2, values=["固定值", "多倍行距"], width=10)
         self.body_line_rule.pack(side="left", padx=5)
         self.body_spacing = ttk.Entry(bf2, width=8)
         self.body_spacing.pack(side="left", padx=5)
         ttk.Label(bf2, text="默认多倍行距 1.25").pack(side="left", padx=5)
 
-    # 右侧：图题/表题
+    # 右侧：图表标题设置（合并图题和表题）
     def _build_right(self, parent):
-        rf = ttk.LabelFrame(parent, text="图题 / 表题设置", padding=10)
+        rf = ttk.LabelFrame(parent, text="图表标题设置", padding=10)
         rf.grid(row=0, column=1, sticky="nsew")
 
-        def add_caption_row(label, store_name):
-            row = ttk.Frame(rf)
-            row.pack(fill="x", pady=6)
+        # 让右侧框架内部可以扩展
+        rf.grid_columnconfigure(0, weight=1)
 
-            ttk.Label(row, text=label, width=10).pack(side="left")
-            ttk.Label(row, text="字体").pack(side="left", padx=2)
-            cb_font = ttk.Combobox(row, values=["宋体", "黑体", "微软雅黑", "楷体"], width=10)
-            cb_font.pack(side="left", padx=2)
+        # 使用网格布局替代pack布局，以便更好控制
+        row_frame = ttk.Frame(rf)
+        row_frame.grid(row=0, column=0, sticky="ew", pady=10)
+        row_frame.grid_columnconfigure(1, weight=1)
 
-            ttk.Label(row, text="字号").pack(side="left", padx=2)
-            cb_size = ttk.Combobox(row, values=list(self.font_size_map.keys()), width=12)
-            cb_size.pack(side="left", padx=2)
+        # 标签 - 使用网格布局确保对齐
+        ttk.Label(row_frame, text="图表标题", width=10).grid(row=0, column=0, sticky="w", padx=(0, 5))
 
-            bold_var = tk.BooleanVar()
-            ttk.Checkbutton(row, text="B", variable=bold_var).pack(side="left", padx=2)
+        # 字体设置
+        ttk.Label(row_frame, text="字体").grid(row=0, column=1, sticky="w", padx=(0, 2))
+        self.caption_font = ttk.Combobox(row_frame, values=["宋体", "黑体", "微软雅黑", "楷体"], width=10)
+        self.caption_font.grid(row=0, column=2, sticky="w", padx=2)
 
-            setattr(self, store_name, {"font": cb_font, "size": cb_size, "bold": bold_var})
+        # 字号设置
+        ttk.Label(row_frame, text="字号").grid(row=0, column=3, sticky="w", padx=(10, 2))
+        self.caption_size = ttk.Combobox(row_frame, values=list(self.font_size_map.keys()), width=12)
+        self.caption_size.grid(row=0, column=4, sticky="w", padx=2)
 
-        add_caption_row("图题", "fig_title")
-        add_caption_row("表题", "table_title")
+        # 加粗
+        self.caption_bold = tk.BooleanVar()
+        ttk.Checkbutton(row_frame, text="B", variable=self.caption_bold).grid(row=0, column=5, sticky="w", padx=(10, 2))
+
+        # 第二行：行距设置
+        row_frame2 = ttk.Frame(rf)
+        row_frame2.grid(row=1, column=0, sticky="ew", pady=10)
+        row_frame2.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(row_frame2, text="行距设置", width=10).grid(row=0, column=0, sticky="w", padx=(0, 5))
+
+        ttk.Label(row_frame2, text="类型").grid(row=0, column=1, sticky="w", padx=(0, 2))
+        self.caption_line_rule = ttk.Combobox(row_frame2, values=["固定值", "多倍行距"], width=10)
+        self.caption_line_rule.grid(row=0, column=2, sticky="w", padx=2)
+
+        ttk.Label(row_frame2,).grid(row=0, column=3, sticky="w", padx=(10, 2))
+        self.caption_spacing = ttk.Entry(row_frame2, width=8)
+        self.caption_spacing.grid(row=0, column=4, sticky="w", padx=2)
+        ttk.Label(row_frame2, ).grid(row=0, column=5, sticky="w", padx=2)
+
+        # 添加说明文本
+        note_label = ttk.Label(rf, text="注：图表标题包括图题和表题，统一设置格式", font=("", 9))
+        note_label.grid(row=2, column=0, sticky="w", pady=(10, 0))
 
     # 底部按钮
     def _build_bottom(self, parent):
         bottom = ttk.Frame(parent, padding=10)
         bottom.grid(row=1, column=0, columnspan=2, sticky="ew")
-        self.btn_choose = ttk.Button(bottom, text="选择文件")
+
+        # 配置底部框架的列权重
+        bottom.grid_columnconfigure(0, weight=1)
+        bottom.grid_columnconfigure(1, weight=1)
+
+        # 左侧按钮
+        left_btn_frame = ttk.Frame(bottom)
+        left_btn_frame.grid(row=0, column=0, sticky="w")
+
+        self.btn_choose = ttk.Button(left_btn_frame, text="选择文件")
         self.btn_choose.pack(side="left", padx=5)
-        self.btn_output = ttk.Button(bottom, text="输出路径")
+        self.btn_output = ttk.Button(left_btn_frame, text="输出路径")
         self.btn_output.pack(side="left", padx=5)
-        self.btn_start = ttk.Button(bottom, text="开始格式化", width=20)
+
+        # 右侧按钮
+        right_btn_frame = ttk.Frame(bottom)
+        right_btn_frame.grid(row=0, column=1, sticky="e")
+
+        self.btn_start = ttk.Button(right_btn_frame, text="开始格式化", width=20)
         self.btn_start.pack(side="right", padx=5)
 
     # ---------------------- 填充配置 ----------------------
@@ -207,24 +247,20 @@ class WordFormatterUI:
         self.body_spacing.delete(0, "end")
         self.body_spacing.insert(0, body_cfg.get("spacing", "1.25"))
 
-        # 图题
-        fig_cfg = cfg["figure"]
-        self.fig_title["font"].set(fig_cfg.get("font", "宋体"))
-        self.fig_title["size"].set(fig_cfg.get("size", "小五号 (9pt)"))
-        self.fig_title["bold"].set(fig_cfg.get("bold", False))
-
-        # 表题
-        table_cfg = cfg["table"]
-        self.table_title["font"].set(table_cfg.get("font", "宋体"))
-        self.table_title["size"].set(table_cfg.get("size", "小五号 (9pt)"))
-        self.table_title["bold"].set(table_cfg.get("bold", False))
+        # 图表标题
+        caption_cfg = cfg.get("caption", {})
+        self.caption_font.set(caption_cfg.get("font", "宋体"))
+        self.caption_size.set(caption_cfg.get("size", "小五号 (9pt)"))
+        self.caption_bold.set(caption_cfg.get("bold", False))
+        self.caption_line_rule.set(caption_cfg.get("line_rule", "多倍行距"))
+        self.caption_spacing.delete(0, "end")
+        self.caption_spacing.insert(0, caption_cfg.get("spacing", "1.25"))
 
     def get_config(self):
         cfg = {
             "titles": {},
             "body": {},
-            "figure": {},
-            "table": {}
+            "caption": {}
         }
 
         # 标题 1-4
@@ -245,23 +281,16 @@ class WordFormatterUI:
             "spacing": self.body_spacing.get()
         }
 
-        # 图题
-        cfg["figure"] = {
-            "font": self.fig_title["font"].get(),
-            "size": self.fig_title["size"].get(),
-            "bold": self.fig_title["bold"].get()
-        }
-
-        # 表题
-        cfg["table"] = {
-            "font": self.table_title["font"].get(),
-            "size": self.table_title["size"].get(),
-            "bold": self.table_title["bold"].get()
+        # 图表标题
+        cfg["caption"] = {
+            "font": self.caption_font.get(),
+            "size": self.caption_size.get(),
+            "bold": self.caption_bold.get(),
+            "line_rule": self.caption_line_rule.get(),
+            "spacing": self.caption_spacing.get()
         }
 
         return cfg
 
     def run(self):
         self.root.mainloop()
-
-

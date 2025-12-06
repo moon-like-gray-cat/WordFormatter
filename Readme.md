@@ -12,7 +12,7 @@
 
 - **想直接使用？**  
   
-[WordFormatter v0.9 Release](https://github.com/moon-like-gray-cat/WordFormatter/releases/tag/v0.9)
+[WordFormatter v1.0.0 Release](https://github.com/moon-like-gray-cat/WordFormatter/releases/tag/v1.0.0)
 只需要下载 .exe 后缀的文件即可
 
 - **想了解原理？**  
@@ -38,6 +38,9 @@
 ---
 ## ⚠ 使用前请注意
 
+### 0.固定行距问题
+如果正文的行距是固定的磅值，会压缩图片的显示空间。简单来说就是图片显示不全
+非必要不要设置固定行距，不然只能自己手动调整行距的设置了（先全选中设置为一倍行距，这个时候图片会恢复正常，之后再单独选中文字，设置行间距）
 ### 1. 文件格式必须是 `.docx`
 `.doc` 无法处理，请先另存或转换。
 
