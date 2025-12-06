@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.py~      # 临时文件
+*.swp      # vim swap 文件
+
+# 虚拟环境
+venv/
+.venv/
+
+# 打包生成文件
+build/
+dist/
+*.spec
+
+# egg-info
+*.egg-info/
+
+# IDE 文件
+.vscode/
+.idea/
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
+# uv 锁文件
+uv.lock
+

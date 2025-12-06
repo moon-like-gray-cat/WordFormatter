@@ -103,8 +103,6 @@ WordFormatter/
 │       ├── core/                # 业务代码（Word 处理逻辑）
 │       │   ├── __init__.py
 │       │   ├── formatter.py
-│       │   ├── style_utils.py
-│       │   └── numbering_utils.py
 │       │
 │       ├── resources/           # 图标、样例文件
 │       │   ├── icon.ico
@@ -115,7 +113,7 @@ WordFormatter/
 ├── tests/                       # 单元测试
 │ 
 │
-├── scripts/                     # 可选：批处理脚本、打包脚本
+├── scripts/                     #打包脚本
 │   └── build_exe.bat
 │
 ├── pyproject.toml               # 现代项目管理（替代 setup.py）

@@ -1,0 +1,22 @@
+[project]
+name = "wordformatter"
+version = "0.1.0"
+description = "A Word formatting GUI tool"
+requires-python = ">=3.9"
+authors = [
+    { name="xyz" }
+]
+
+# 项目依赖
+dependencies = [
+    "python-docx",
+]
+
+# 指定源码目录
+# 这是最关键的：uv 会根据这个路径自动让 wordtool 成为可 import 包
+[tool.uv.sources]
+wordtool = { path = "src/wordtool" }
+
+# uv 的配置（可选）
+[tool.uv]
+package = true
