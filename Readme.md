@@ -11,7 +11,9 @@
 ## 🔧 使用方法
 
 - **想直接使用？**  
-  前往 右侧 Release 页面下载打包好的可执行文件（exe）双击即可运行。
+  
+[WordFormatter v0.9 Release](https://github.com/moon-like-gray-cat/WordFormatter/releases/tag/v0.9)
+只需要下载 .exe 后缀的文件即可
 
 - **想了解原理？**  
   可以继续查看项目结构与源代码。
