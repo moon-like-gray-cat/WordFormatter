@@ -12,7 +12,7 @@
 
 - **想直接使用？**  
   
-[WordFormatter v1.0.0 Release](https://github.com/moon-like-gray-cat/WordFormatter/releases/tag/v1.0.0)
+[WordFormatter v1.1.0 Release](https://github.com/moon-like-gray-cat/WordFormatter/releases/tag/v1.1.0)
 只需要下载 .exe 后缀的文件即可
 
 - **想了解原理？**  
