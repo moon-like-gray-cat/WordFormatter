@@ -26,8 +26,8 @@
         }
     },
     "body": {
-        "font": "宋体",
-        "size": "五号 (10.5pt)",
+        "font": "微软雅黑",
+        "size": "四号 (14pt)",
         "bold": false,
         "line_rule": "固定值",
         "spacing": "23"

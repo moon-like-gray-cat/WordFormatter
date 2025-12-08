@@ -104,7 +104,7 @@ class WordFormatterUI:
             cb_format.pack(side="left", padx=2)
 
             ttk.Label(row, text="字体").pack(side="left", padx=(5, 2))
-            cb_font = ttk.Combobox(row, values=["宋体", "黑体", "微软雅黑", "楷体"], width=10)
+            cb_font = ttk.Combobox(row, values=["宋体", "黑体", "微软雅黑", "楷体","等线"], width=10)
             cb_font.pack(side="left", padx=2)
 
             ttk.Label(row, text="字号").pack(side="left", padx=(5, 2))
@@ -130,7 +130,7 @@ class WordFormatterUI:
         bf.pack(fill="x", pady=5)
 
         ttk.Label(bf, text="字体").pack(side="left")
-        self.body_font = ttk.Combobox(bf, values=["宋体", "黑体", "微软雅黑"], width=10)
+        self.body_font = ttk.Combobox(bf, values=["宋体", "黑体", "微软雅黑","等线"], width=10)
         self.body_font.pack(side="left", padx=5)
 
         ttk.Label(bf, text="字号").pack(side="left", padx=(5, 2))
@@ -168,7 +168,7 @@ class WordFormatterUI:
 
         # 字体设置
         ttk.Label(row_frame, text="字体").grid(row=0, column=1, sticky="w", padx=(0, 2))
-        self.caption_font = ttk.Combobox(row_frame, values=["宋体", "黑体", "微软雅黑", "楷体"], width=10)
+        self.caption_font = ttk.Combobox(row_frame, values=["宋体", "黑体", "微软雅黑", "楷体","等线"], width=10)
         self.caption_font.grid(row=0, column=2, sticky="w", padx=2)
 
         # 字号设置
