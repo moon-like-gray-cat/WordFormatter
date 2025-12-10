@@ -2,35 +2,35 @@
     "titles": {
         "title1": {
             "format": "一、",
-            "font": "黑体",
+            "font": "宋体",
             "size": "四号 (14pt)",
-            "bold": false
+            "bold": true
         },
         "title2": {
             "format": "（一）",
-            "font": "黑体",
+            "font": "宋体",
             "size": "五号 (10.5pt)",
-            "bold": false
+            "bold": true
         },
         "title3": {
             "format": "1.",
             "font": "宋体",
             "size": "五号 (10.5pt)",
-            "bold": false
+            "bold": true
         },
         "title4": {
             "format": "（1）",
             "font": "宋体",
             "size": "小五号 (9pt)",
-            "bold": false
+            "bold": true
         }
     },
     "body": {
-        "font": "微软雅黑",
+        "font": "宋体",
         "size": "四号 (14pt)",
         "bold": false,
-        "line_rule": "固定值",
-        "spacing": "23"
+        "line_rule": "多倍行距",
+        "spacing": "1"
     },
     "caption": {
         "font": "宋体",

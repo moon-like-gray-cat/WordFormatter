@@ -1,4 +1,3 @@
-import re
 from docx import Document
 from docx.shared import Pt
 from docx.oxml.ns import qn
@@ -7,6 +6,11 @@ from docx.oxml import OxmlElement
 from docx.shared import RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.text import WD_LINE_SPACING
+import win32com.client as win32
+import re
+
+
+
 
 TITLE_FORMATS = [
     "一", "一、", "（一）", "（一）、", "（一）.",
@@ -44,6 +48,22 @@ _FORMAT_TO_REGEX = {
 }
 
 
+def extract_pt(size_str: str) -> float:
+    """
+    将 config 里的 "四号 (14pt)" / "五号 (10.5pt)" 转成数字 pt。
+    如果没有括号，尝试强行解析数字。
+    """
+    m = re.search(r"\(([\d.]+)pt\)", size_str)
+    if m:
+        return float(m.group(1))
+
+    # fallback 强行取前面的数字
+    m = re.search(r"([\d.]+)", size_str)
+    if m:
+        return float(m.group(1))
+
+    return 12.0
+
 class WordFormatter:
     def __init__(self, file_path, config: dict):
         self.file_path = file_path
@@ -53,7 +73,25 @@ class WordFormatter:
         self.figure = config.get("figure", {})
         self.table = config.get("table", {})
 
-
+        # ----------------------------------------------------------------------
+        # 使用 win32com 展开 Word 自动编号 这里需要关闭word编辑器
+        # ----------------------------------------------------------------------
+    def _expand_numbering(self, input_path, output_path):
+        """
+        调用 Word COM 将自动编号转成真实文本
+        """
+        try:
+            word = win32.Dispatch("Word.Application")
+            word.Visible = False
+            doc = word.Documents.Open(input_path)
+            doc.ConvertNumbersToText()  # 将自动编号展开
+            doc.SaveAs(output_path)
+            doc.Close()
+            word.Quit()
+            return output_path
+        except Exception as e:
+            print(f"Error expanding numbering: {e}")
+            return input_path  # 出错就返回原文件
 
     # ----------------------------------------------------------------------
     # 设置文本 run 样式（图片 run 跳过）
@@ -66,6 +104,46 @@ class WordFormatter:
         run.font.size = Pt(size)
         run.bold = bold
         run.font.color.rgb = RGBColor(0, 0, 0)
+
+
+    def _clean_numbering_spaces(self, doc):
+        """
+        遍历段落，根据配置里的 title1~title4 编号格式，删除编号和标题文本之间多余空格
+        会删除所有段落的前缀空格
+        """
+        import re
+
+        for para in doc.paragraphs:
+            text = para.text
+            if not text.strip():
+                continue
+
+            # 清理段首空格/Tab
+            text = text.lstrip(" \t")
+
+            # 遍历 title1~title4
+            for i in range(1, 5):
+                key = f"title{i}"
+                fmt = self.titles.get(key, {}).get("format", "")
+                if not fmt:
+                    continue
+
+                regex = _FORMAT_TO_REGEX.get(fmt)
+                if regex:
+                    # 用 re.sub 把编号后的空格去掉
+                    # 假设编号是开头连续匹配的部分
+                    try:
+                        text = re.sub(f"({regex})\\s+", r"\1", text)
+                        # 如果匹配成功就不再尝试低级别标题
+                        break
+                    except re.error as e:
+                        print(f"Invalid regex for {key}: {regex}, {e}")
+                        continue
+
+            para.text = text
+
+
+
 
     # ----------------------------------------------------------------------
     # 标题层级检测
@@ -152,7 +230,13 @@ class WordFormatter:
             else:  # 固定值（磅）
                 paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
                 paragraph.paragraph_format.line_spacing = Pt(spacing)
-    # ----------------------------------------------------------------------
+
+        # -------- 4. 标题对齐和缩进 --------
+        if level > 0:
+            paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.paragraph_format.left_indent = Pt(0)
+        # ----------------------------------------------------------------------
     # 将英文括号转中文括号
     # ----------------------------------------------------------------------
     def _normalize_brackets(self, text):
@@ -185,30 +269,83 @@ class WordFormatter:
                     self._apply_style(caption_para, level=0, caption_type="caption")
                     caption_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
+    def _normalize_paragraph_indent(self, doc):
+
+        for p in doc.paragraphs:
+            # 跳过标题
+            if "标题" in p.style.name or "Heading" in p.style.name:
+                continue
+
+            fmt = p.paragraph_format
+
+            # ---- 自动读取正文字号 ----
+            # 尝试从 run 中找字号（通常 run.font.size 才有真实值）
+            font_size = None
+            for run in p.runs:
+                if run.font.size:
+                    font_size = run.font.size
+                    break
+
+            # 如果整段都没有设置字号（极少见），用默认 16pt
+            if font_size is None:
+                font_size = Pt(16)
+
+            # ---- Word 的“2 字符缩进”计算方式 ----
+            # 1 字符 ≈ 字号
+            # 2 字符 = 字号 × 2
+            two_char_indent = font_size * 2
+
+            # -------------------------
+            # 应用格式
+            # -------------------------
+
+            # 顶格：清空左缩进
+            fmt.left_indent = Pt(0)
+
+            # 首行缩进 = 2 字符宽度
+            fmt.first_line_indent = two_char_indent
+
+            # 统一左对齐
+            p.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+
     # ----------------------------------------------------------------------
     # 保存文档
     # ----------------------------------------------------------------------
+
     def save(self, output_path):
         try:
-            doc = Document(self.file_path)
 
-            # 1. 预处理标题括号（只修改文字 run，不覆盖段落）
+            # ----------------- 1. 先展开自动编号 -----------------
+            expanded_path = self._expand_numbering(self.file_path, output_path.replace(".docx", "_expanded.docx"))
+            # ----------------- 2. 用 python-docx 打开展开后的文档 -----------------
+            doc = Document(expanded_path)
+
+            # 清理编号和标题间多余空格
+            self._clean_numbering_spaces(doc)
+
+
+            # ----------------- 3. 标题括号规范化 -----------------
             for para in doc.paragraphs:
                 for run in para.runs:
-                    if not run._element.xpath(".//w:drawing"):
-                        run.text = self._normalize_brackets(run.text)
+                    if not run._element.xpath(".//w:drawing"): # 检查run是否包含图片
+                        run.text = self._normalize_brackets(run.text) # 对纯文本进行处理
 
 
-
-            # 3. 应用样式（标题和正文）
+            # ----------------- 4. 应用样式（标题/正文） -----------------
             for para in doc.paragraphs:
                 level = self._detect_level(para.text)
                 self._apply_style(para, level)
-            # 2. 处理已有图题和表题
+
+
+            self._normalize_paragraph_indent(doc)
+            # ----------------- 5. 处理已有图题/表题 -----------------
             self._preprocess_captions(doc)
 
+            # ----------------- 6. 保存最终文档 -----------------
             doc.save(output_path)
+            print(f"文档保存成功：{output_path}")
             return True
+
         except Exception as e:
             print(f"Error saving document: {e}")
             return False
