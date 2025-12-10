@@ -113,7 +113,7 @@ WordFormatter/
 ```
 
 
-## 其他平台
+## 更多消息
 B站： BV1QemtBSEsm
 
 
