@@ -33,7 +33,7 @@
 ---
 # 怎么使用
 
-[WordFormatter v2.0.0 Release](https://github.com/moon-like-gray-cat/WordFormatter/releases/tag/v2.0.0)
+[WordFormatter v2.1.0 Release](https://github.com/moon-like-gray-cat/WordFormatter/releases/tag/v2.1.0)
 只需要下载 .exe 后缀的文件即可
 
 
