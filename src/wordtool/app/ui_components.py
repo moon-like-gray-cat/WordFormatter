@@ -26,6 +26,7 @@ class WordFormatterUI:
         self.root.title("Word 格式化工具")
         self.root.geometry("1000x650")  # 增加窗口尺寸
 
+        self.expand_numbering_var = tk.BooleanVar(value=True)
         # 设置图标
         icon_path = resource_path("icon.ico")
         if os.path.exists(icon_path):
@@ -35,8 +36,8 @@ class WordFormatterUI:
 
         # 可识别标题格式
         self.title_formats = [
-            "一", "一、", "（一）", "（一）、", "（一）.",
-            "（1）", "（1）、", "（1）.", "1", "1.", "1、",
+            "一", "一、", "（一）","（1）",
+            "1", "1.","1.1","1.1.1","1.1.1.1",
             "a", "a.", "A", "A.", "①", "I", "I.", "（I）"
         ]
 
@@ -225,6 +226,23 @@ class WordFormatterUI:
         self.btn_start = ttk.Button(right_btn_frame, text="开始格式化", width=20)
         self.btn_start.pack(side="right", padx=5)
 
+        # ---------- 自动编号选项 ----------
+        option_frame = ttk.Frame(bottom)
+        option_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(5, 0))
+
+        ttk.Checkbutton(
+            option_frame,
+            variable=self.expand_numbering_var
+        ).pack(side="left")
+
+        ttk.Label(
+            option_frame,
+            text="若勾选请保存并关闭所有的 Word 文档，如果不清楚是否勾选请保持默认的勾选",
+            wraplength=800
+        ).pack(side="left", padx=5)
+
+
+
     # ---------------------- 填充配置 ----------------------
     def _apply_config_to_ui(self):
         cfg = self.config_data
@@ -289,7 +307,10 @@ class WordFormatterUI:
             "line_rule": self.caption_line_rule.get(),
             "spacing": self.caption_spacing.get()
         }
-
+        # win32是否启用的选项
+        cfg["options"] = {
+            "expand_numbering": self.expand_numbering_var.get()
+        }
         return cfg
 
     def run(self):

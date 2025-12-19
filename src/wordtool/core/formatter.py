@@ -9,12 +9,12 @@ from docx.enum.text import WD_LINE_SPACING
 import win32com.client as win32
 import re
 
-
+from docx.enum.style import WD_STYLE_TYPE
 
 
 TITLE_FORMATS = [
     "一", "一、", "（一）", "（一）、", "（一）.",
-    "（1）", "（1）、", "（1）.", "1", "1.", "1、",
+    "（1）", "（1）、", "（1）.", "1", "1.", "1、","1.1","1.1.1",
     "a", "a.", "A", "A.", "①", "I", "I.", "（I）"
 ]
 
@@ -23,16 +23,19 @@ _FORMAT_TO_REGEX = {
     "一": r"^[一二三四五六七八九十]+\s*",  # 匹配 "一 " 或 "二 " (无标点)
     "一、": r"^[一二三四五六七八九十]+[、\.]\s*",  # 匹配 "一、", "二.", "三 " (带顿号或点号)
     "（一）": r"^（[一二三四五六七八九十]+）\s*",  # 匹配 "(一) ", "(二) "
-    "（一）、": r"^（[一二三四五六七八九十]+）[、\.]?\s*",  # 匹配 "(一) 、", "(二) ", "(三)."
-    "（一）\.": r"^（[一二三四五六七八九十]+）[、\.]\s*",  # 同上，匹配带点号或顿号
 
     # ------------------ 阿拉伯数字类 ----------------------
-    "1": r"^\d+\s*",  # 匹配 "1 " 或 "2 " (无标点)
-    "1.": r"^\d+[、\.]\s*",  # 匹配 "1.", "2、", "3 " (带点号或顿号)
-    "1、": r"^\d+[、\.]\s*",  # 同上
+    "1": r"^\d+\s*",  # 匹配 "1 " 或 "2 " (无标点)    "1": r"^\d+(?![\.])\s*",
+
+    "1.": r"^\d+\.(?!\d)\s*",
+
+    "1.1": r"^\d+\.\d+(?!\.)\s*",
+
+    "1.1.1": r"^\d+\.\d+\.\d+(?!\.)\s*",
+
+    "1.1.1.1": r"^\d+\.\d+\.\d+\.\d+(?!\.)\s*",
+
     "（1）": r"^（\d+）\s*",  # 匹配 "(1) ", "(2) "
-    "（1）、": r"^（\d+）[、\.]?\s*",  # 匹配 "(1) 、", "(2) ", "(3)."
-    "（1）\.": r"^（\d+）[、\.]\s*",  # 同上
 
     # ------------------ 字母和罗马数字类 --------------------
     "a": r"^[a-z]{1,2}\s*",  # 匹配 "a " 或 "b "
@@ -64,6 +67,20 @@ def extract_pt(size_str: str) -> float:
 
     return 12.0
 
+def ensure_heading_style(doc, level: int):
+    """
+    确保文档中存在 Heading {level} 样式
+    """
+    style_name = f"Heading {level}"
+
+    try:
+        return doc.styles[style_name]
+    except KeyError:
+        style = doc.styles.add_style(style_name, WD_STYLE_TYPE.PARAGRAPH)
+        style.base_style = doc.styles["Normal"]
+        return style
+
+
 class WordFormatter:
     def __init__(self, file_path, config: dict):
         self.file_path = file_path
@@ -72,26 +89,75 @@ class WordFormatter:
         self.body = config.get("body", {})
         self.figure = config.get("figure", {})
         self.table = config.get("table", {})
+        #读取是否展开自动编号（默认 True）
+        self.expand_numbering = (
+            config.get("options", {})
+            .get("expand_numbering", True)
+        )
 
-        # ----------------------------------------------------------------------
-        # 使用 win32com 展开 Word 自动编号 这里需要关闭word编辑器
-        # ----------------------------------------------------------------------
+
     def _expand_numbering(self, input_path, output_path):
         """
-        调用 Word COM 将自动编号转成真实文本
+        使用 Word COM 将自动编号转为真实文本
+        - 若系统无 Office / win32com 不可用 → 自动跳过
+        - 若路径非法 / 打不开 → 自动跳过
+        - 任何异常不影响主流程
         """
+        import os
+
+        # 路径标准化（Word COM 对路径极其敏感）
+        input_path = os.path.abspath(input_path)
+        output_path = os.path.abspath(output_path)
+
+        # 输入文件不存在，直接跳过
+        if not os.path.exists(input_path):
+            print(f"[WordFormatter] Skip expand numbering: file not found: {input_path}")
+            return input_path
+
+        # 尝试导入 win32com（判断是否有 Office 能力）
         try:
-            word = win32.Dispatch("Word.Application")
+            import win32com.client as win32
+        except ImportError:
+            print("[WordFormatter] Skip expand numbering: win32com not available (no Office?)")
+            return input_path
+
+        word = None
+        doc = None
+
+        try:
+            # 4️⃣ 使用 DispatchEx，避免抢占已有 Word 实例
+            word = win32.DispatchEx("Word.Application")
             word.Visible = False
-            doc = word.Documents.Open(input_path)
-            doc.ConvertNumbersToText()  # 将自动编号展开
+            word.DisplayAlerts = 0  # 禁止弹窗
+
+            # 打开文档（只读 = False）
+            doc = word.Documents.Open(input_path, ReadOnly=False)
+
+            # 展开自动编号
+            doc.ConvertNumbersToText()
+
+            # 保存为新文件
             doc.SaveAs(output_path)
-            doc.Close()
-            word.Quit()
+
             return output_path
+
         except Exception as e:
-            print(f"Error expanding numbering: {e}")
-            return input_path  # 出错就返回原文件
+            print(f"[WordFormatter] Error expanding numbering: {e}")
+            return input_path
+
+        finally:
+            # 8️⃣ 资源清理（必须）
+            try:
+                if doc is not None:
+                    doc.Close(False)
+            except Exception:
+                pass
+
+            try:
+                if word is not None:
+                    word.Quit()
+            except Exception:
+                pass
 
     # ----------------------------------------------------------------------
     # 设置文本 run 样式（图片 run 跳过）
@@ -122,7 +188,7 @@ class WordFormatter:
             text = text.lstrip(" \t")
 
             # 遍历 title1~title4
-            for i in range(1, 5):
+            for i in range(4, 0, -1):
                 key = f"title{i}"
                 fmt = self.titles.get(key, {}).get("format", "")
                 if not fmt:
@@ -155,7 +221,7 @@ class WordFormatter:
         if not normalized_text:
             return 0
 
-        for i in range(1, 5):
+        for i in range(4, 0, -1):
             key = f"title{i}"
             # 2. 从 JSON 配置中获取用户设定的标识 (例如 "（1）" 或 "1.")
             format_key = self.titles.get(key, {}).get("format", "")
@@ -185,10 +251,12 @@ class WordFormatter:
             key = f"title{level}"
             return self.titles.get(key, self.body)
 
+
+
     # ----------------------------------------------------------------------
     # 应用样式到段落
     # ----------------------------------------------------------------------
-    def _apply_style(self, paragraph, level, heading_style=True, caption_type=None):
+    def _apply_style(self, paragraph, level,doc, heading_style=True, caption_type=None):
         """
         paragraph: 要设置样式的段落
         level: 标题等级，0 表示正文或图表标题
@@ -213,7 +281,8 @@ class WordFormatter:
 
         # 设置段落样式（标题等级大于0才使用 Heading）
         if heading_style and level > 0:
-            paragraph.style = f'Heading {level}'
+            ensure_heading_style(doc, level)
+            paragraph.style = f"Heading {level}"
 
         # 设置 run 样式
         for run in paragraph.runs:
@@ -258,7 +327,7 @@ class WordFormatter:
             if para._element.xpath(".//w:drawing"):
                 if i + 1 < len(paragraphs) and paragraphs[i + 1].text.strip().startswith("图"):
                     caption_para = paragraphs[i + 1]
-                    self._apply_style(caption_para, level=0, caption_type="caption")
+                    self._apply_style(caption_para, level=0,doc=doc,caption_type="caption")
                     caption_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
             # 表格上方表题
@@ -266,7 +335,7 @@ class WordFormatter:
             if next_elem is not None and next_elem.tag.endswith("tbl"):
                 if para.text.strip().startswith("表"):
                     caption_para = para
-                    self._apply_style(caption_para, level=0, caption_type="caption")
+                    self._apply_style(caption_para, level=0,doc=doc, caption_type="caption")
                     caption_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
     def _normalize_paragraph_indent(self, doc):
@@ -315,8 +384,14 @@ class WordFormatter:
     def save(self, output_path):
         try:
 
-            # ----------------- 1. 先展开自动编号 -----------------
-            expanded_path = self._expand_numbering(self.file_path, output_path.replace(".docx", "_expanded.docx"))
+            # ----------------- 1. 是否展开自动编号 -----------------
+            if self.expand_numbering:
+                expanded_path = self._expand_numbering(
+                    self.file_path,
+                    output_path.replace(".docx", "_expanded.docx")
+                )
+            else:
+                expanded_path = self.file_path
             # ----------------- 2. 用 python-docx 打开展开后的文档 -----------------
             doc = Document(expanded_path)
 
@@ -334,7 +409,7 @@ class WordFormatter:
             # ----------------- 4. 应用样式（标题/正文） -----------------
             for para in doc.paragraphs:
                 level = self._detect_level(para.text)
-                self._apply_style(para, level)
+                self._apply_style(para, level, doc)
 
 
             self._normalize_paragraph_indent(doc)

@@ -27,3 +27,4 @@ Thumbs.db
 # uv 锁文件
 uv.lock
 
+tests
