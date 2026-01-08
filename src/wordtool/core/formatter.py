@@ -8,8 +8,8 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.text import WD_LINE_SPACING
 import win32com.client as win32
 import re
-
 from docx.enum.style import WD_STYLE_TYPE
+
 
 
 TITLE_FORMATS = [
@@ -67,19 +67,35 @@ def extract_pt(size_str: str) -> float:
 
     return 12.0
 
-def ensure_heading_style(doc, level: int):
+def ensure_outline_level(paragraph, level: int):
     """
-    确保文档中存在 Heading {level} 样式
+    仅设置 outline level（用于目录 / 导航窗格）
+    不使用 Heading 样式
     """
-    style_name = f"Heading {level}"
 
-    try:
-        return doc.styles[style_name]
-    except KeyError:
-        style = doc.styles.add_style(style_name, WD_STYLE_TYPE.PARAGRAPH)
-        style.base_style = doc.styles["Normal"]
-        return style
+    # level=1 → outlineLvl=0
+    outline_val = level - 1
+    if outline_val < 0:
+        return
 
+    pPr = paragraph._element.get_or_add_pPr()
+
+    # 防止重复 outlineLvl
+    existing = pPr.find(qn("w:outlineLvl"))
+    if existing is not None:
+        pPr.remove(existing)
+
+    outline = OxmlElement("w:outlineLvl")
+    outline.set(qn("w:val"), str(outline_val))
+    pPr.append(outline)
+
+def paragraph_has_drawing(paragraph):
+    """
+    判断段落中是否包含嵌入型图片（inline image / drawing）
+    """
+    return bool(
+        paragraph._element.xpath(".//w:drawing")
+    )
 
 class WordFormatter:
     def __init__(self, file_path, config: dict):
@@ -125,7 +141,7 @@ class WordFormatter:
         doc = None
 
         try:
-            # 4️⃣ 使用 DispatchEx，避免抢占已有 Word 实例
+            # 使用 DispatchEx，避免抢占已有 Word 实例
             word = win32.DispatchEx("Word.Application")
             word.Visible = False
             word.DisplayAlerts = 0  # 禁止弹窗
@@ -146,7 +162,7 @@ class WordFormatter:
             return input_path
 
         finally:
-            # 8️⃣ 资源清理（必须）
+            # 资源清理（必须）
             try:
                 if doc is not None:
                     doc.Close(False)
@@ -162,32 +178,66 @@ class WordFormatter:
     # ----------------------------------------------------------------------
     # 设置文本 run 样式（图片 run 跳过）
     # ----------------------------------------------------------------------
-    def _set_run_style(self, run, font_name, size, bold):
+
+    def _set_run_style(self, run, cn_font, cn_size, bold, en_font=None, en_size=None):
+        # 1. 跳过图片 run
         if run._element.xpath(".//w:drawing"):
             return
-        run.font.name = font_name
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
-        run.font.size = Pt(size)
-        run.bold = bold
+
+        # 获取或创建 rPr (Run Properties) 元素
+        rPr = run._element.get_or_add_rPr()
+
+        # --- 2. 字体处理 (中西文分离) ---
+        rFonts = rPr.get_or_add_rFonts()
+        if cn_font:
+            # 设置东亚字体（中文）
+            rFonts.set(qn("w:eastAsia"), cn_font)
+        if en_font:
+            # 设置西文字体（ASCII 字符范围）
+            rFonts.set(qn("w:ascii"), en_font)
+            # 设置高 ANSI 字体（通常也要指向西文字体，确保符号一致）
+            rFonts.set(qn("w:hAnsi"), en_font)
+
+        # --- 3. 字号处理 (中西文分离) ---
+        # Word XML 中字号单位是半磅 (Half-points)，即 Pt * 2
+        def set_xml_size(rPr_elem, size_pt, tag_name):
+            existing = rPr_elem.find(qn(tag_name))
+            if existing is not None:
+                rPr_elem.remove(existing)
+            new_tag = OxmlElement(tag_name)
+            new_tag.set(qn("w:val"), str(int(size_pt * 2)))
+            rPr_elem.append(new_tag)
+
+        if en_size:
+            # w:sz 对应西文字号
+            set_xml_size(rPr, en_size, "w:sz")
+        if cn_size:
+            # w:szCs 对应复杂字符/东亚字符字号
+            set_xml_size(rPr, cn_size, "w:szCs")
+
+        # --- 4. 其他样式 (加粗、颜色) ---
+        run.font.bold = bool(bold)
         run.font.color.rgb = RGBColor(0, 0, 0)
 
-
     def _clean_numbering_spaces(self, doc):
-        """
-        遍历段落，根据配置里的 title1~title4 编号格式，删除编号和标题文本之间多余空格
-        会删除所有段落的前缀空格
-        """
-        import re
-
         for para in doc.paragraphs:
-            text = para.text
-            if not text.strip():
+
+            if not para.runs:
                 continue
 
-            # 清理段首空格/Tab
-            text = text.lstrip(" \t")
+            # 找到第一个【真正有文本的 run】
+            first_text_run = None
+            for run in para.runs:
+                if run.text and run.text.strip():
+                    first_text_run = run
+                    break
 
-            # 遍历 title1~title4
+            if not first_text_run:
+                continue
+
+            original = first_text_run.text.lstrip(" \t")
+            new_text = original
+
             for i in range(4, 0, -1):
                 key = f"title{i}"
                 fmt = self.titles.get(key, {}).get("format", "")
@@ -196,20 +246,11 @@ class WordFormatter:
 
                 regex = _FORMAT_TO_REGEX.get(fmt)
                 if regex:
-                    # 用 re.sub 把编号后的空格去掉
-                    # 假设编号是开头连续匹配的部分
-                    try:
-                        text = re.sub(f"({regex})\\s+", r"\1", text)
-                        # 如果匹配成功就不再尝试低级别标题
-                        break
-                    except re.error as e:
-                        print(f"Invalid regex for {key}: {regex}, {e}")
-                        continue
+                    new_text = re.sub(f"({regex})\\s+", r"\1", original)
+                    break
 
-            para.text = text
-
-
-
+            if new_text != original:
+                first_text_run.text = new_text
 
     # ----------------------------------------------------------------------
     # 标题层级检测
@@ -245,66 +286,117 @@ class WordFormatter:
     # 获取样式
     # ----------------------------------------------------------------------
     def _get_style(self, level):
+        """
+        标题样式 = body 默认值 + title 覆盖
+        """
         if level == 0:
             return self.body
-        else:
-            key = f"title{level}"
-            return self.titles.get(key, self.body)
+
+        key = f"title{level}"
+        title_cfg = self.titles.get(key, {})
+
+        merged = dict(self.body)  # 继承正文行距
+        merged.update(title_cfg)  # 标题只覆盖字体/字号等
+
+        return merged
 
 
 
     # ----------------------------------------------------------------------
     # 应用样式到段落
     # ----------------------------------------------------------------------
-    def _apply_style(self, paragraph, level,doc, heading_style=True, caption_type=None):
+    def _apply_style(self, paragraph, level, doc, caption_type=None):
         """
-        paragraph: 要设置样式的段落
-        level: 标题等级，0 表示正文或图表标题
-        caption_type: 可选 "caption"，表示图表标题
+        paragraph: 段落对象
+        level: 0=正文，1~n=标题
+        caption_type: "caption" 表示图/表标题
         """
-        # ---------------- 获取样式配置 ----------------
+
+        # ------------------------------------------------------------------
+        # 1. 获取样式配置
+        # ------------------------------------------------------------------
         if level == 0 and caption_type == "caption":
-            # 使用 caption 配置
             style_cfg = self.config.get("caption", {})
-            # # 保证图题不会和图片重叠
-            # paragraph.paragraph_format.space_before = Pt(6)  # 图题上方空白
-            # paragraph.paragraph_format.space_after = Pt(3)  # 图题下方空白
         else:
             style_cfg = self._get_style(level)
 
-        # 字体与字号
-        font_name = style_cfg.get("font", "宋体")
-        size_str = style_cfg.get("size", "12")
-        m = re.search(r"\(([\d.]+)pt\)", size_str)
-        size = float(m.group(1)) if m else 12
+        # ------------------------------------------------------------------
+        # 2. 统一使用 Normal，彻底摆脱 Heading
+        # ------------------------------------------------------------------
+        paragraph.style = doc.styles["Normal"]
+
+        # ------------------------------------------------------------------
+        # 3. 标题：写入 outline level（给目录识别）
+        # ------------------------------------------------------------------
+        if level > 0:
+            ensure_outline_level(paragraph, level)
+
+        # ------------------------------------------------------------------
+        # 4. Run 级别：字体 / 字号 / 加粗
+        # ------------------------------------------------------------------
+        # 1. 统一字体字号配置获取
+        cn_font = style_cfg.get("font", "宋体")
+        cn_size = extract_pt(style_cfg.get("size", "12pt"))
         bold = bool(style_cfg.get("bold", False))
 
-        # 设置段落样式（标题等级大于0才使用 Heading）
-        if heading_style and level > 0:
-            ensure_heading_style(doc, level)
-            paragraph.style = f"Heading {level}"
+        en_cfg = self.config.get("en_font", {})
+        en_font = en_cfg.get("font", "Times New Roman")
 
-        # 设置 run 样式
+        if level == 0 and caption_type != "caption":
+            en_size = extract_pt(en_cfg.get("size", "12pt"))
+        else:
+            en_size = cn_size  # 标题及图表说明，西文随中文
+
         for run in paragraph.runs:
-            self._set_run_style(run, font_name, size, bold)
+            self._set_run_style(
+                run,
+                cn_font=cn_font,
+                cn_size=cn_size,
+                bold=bold,
+                en_font=en_font,
+                en_size=cn_size
+            )
+        # ------------------------------------------------------------------
+        # 5. 段落级别：行距（完全 JSON 驱动）
+        # ------------------------------------------------------------------
+        pf = paragraph.paragraph_format
+        pPr = paragraph._element.get_or_add_pPr()
 
-        # ---------------- 设置行距 ----------------
-        if level == 0:
-            line_rule = style_cfg.get("line_rule", "多倍行距")
-            spacing = float(style_cfg.get("spacing", 1.25))
+        # 清除可能残留的 spacing（包括复制粘贴遗留）
+        spacing = pPr.find(qn("w:spacing"))
+        if spacing is not None:
+            pPr.remove(spacing)
 
-            if line_rule == "多倍行距":
-                paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
-                paragraph.paragraph_format.line_spacing = spacing
-            else:  # 固定值（磅）
-                paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-                paragraph.paragraph_format.line_spacing = Pt(spacing)
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(0)
 
-        # -------- 4. 标题对齐和缩进 --------
+        line_rule = style_cfg.get("line_rule", "多倍行距")
+        spacing_val = float(style_cfg.get("spacing", 1.25))
+
+        if line_rule == "多倍行距":
+            pf.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+            pf.line_spacing = spacing_val
+        else:
+            pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            pf.line_spacing = Pt(spacing_val)
+
+        # ------------------------------------------------------------------
+        # 6. 对齐 & 缩进规则
+        # ------------------------------------------------------------------
         if level > 0:
+            # 标题：全部顶格
             paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
-            paragraph.paragraph_format.first_line_indent = Pt(0)
-            paragraph.paragraph_format.left_indent = Pt(0)
+            pf.first_line_indent = Pt(0)
+            pf.left_indent = Pt(0)
+            pf.hanging_indent = Pt(0)
+
+        elif caption_type == "caption":
+            paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            pf.first_line_indent = Pt(0)
+
+        else:
+            # 正文缩进留给 _normalize_paragraph_indent 统一处理
+            paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
         # ----------------------------------------------------------------------
     # 将英文括号转中文括号
     # ----------------------------------------------------------------------
@@ -325,57 +417,82 @@ class WordFormatter:
         for i, para in enumerate(paragraphs):
             # 图片下方图题
             if para._element.xpath(".//w:drawing"):
-                if i + 1 < len(paragraphs) and paragraphs[i + 1].text.strip().startswith("图"):
-                    caption_para = paragraphs[i + 1]
+                if i + 1 < len(paragraphs):
+                    next_text = paragraphs[i + 1].text.strip()
+                    # 以"图"开头，后面跟着数字
+                    if re.match(r'^图\s*\d+.*', next_text):
+                        caption_para = paragraphs[i + 1]
                     self._apply_style(caption_para, level=0,doc=doc,caption_type="caption")
                     caption_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
             # 表格上方表题
             next_elem = para._element.getnext()
             if next_elem is not None and next_elem.tag.endswith("tbl"):
-                if para.text.strip().startswith("表"):
+                if re.match(r'^表\s*\d+.*', para.text.strip()):
                     caption_para = para
                     self._apply_style(caption_para, level=0,doc=doc, caption_type="caption")
                     caption_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
-    def _normalize_paragraph_indent(self, doc):
+    def adjust_line_spacing_for_images(self,doc):
+        """
+        若段落中包含图片，且行距为固定值（Exactly）并且较小，
+        则自动切换为单倍行距，避免图片被裁剪。
+        """
 
-        for p in doc.paragraphs:
-            # 跳过标题
-            if "标题" in p.style.name or "Heading" in p.style.name:
+        for para in doc.paragraphs:
+
+            if not paragraph_has_drawing(para):
                 continue
 
+            fmt = para.paragraph_format
+
+            # 只处理固定行距
+            if fmt.line_spacing_rule != WD_LINE_SPACING.EXACTLY:
+                continue
+
+            # line_spacing 可能为 None（异常文档）
+            if not fmt.line_spacing:
+                continue
+
+            # python-docx 中 line_spacing 为 Length（EMU）
+            try:
+                spacing_pt = fmt.line_spacing.pt
+            except Exception:
+                continue
+
+            fmt.line_spacing_rule = WD_LINE_SPACING.SINGLE
+            fmt.line_spacing = None
+
+    def _normalize_paragraph_indent(self, doc):
+        body_size_str = self.body.get("size", "小四 (12pt)")
+        body_pt = extract_pt(body_size_str)
+
+        # 定义 two_char_indent：2个汉字的宽度 = 字号 * 2
+        two_char_indent = Pt(body_pt * 2)
+
+        for p in doc.paragraphs:
             fmt = p.paragraph_format
+            # 1. 尝试通过正则检测
+            level_by_regex = self._detect_level(p.text)
+            # 2. 尝试从 XML 属性中直接获取大纲级别 (0 代表 1 级标题)
+            pPr = p._element.find(qn("w:pPr"))
+            has_outline = False
+            if pPr is not None:
+                if pPr.find(qn("w:outlineLvl")) is not None:
+                    has_outline = True
 
-            # ---- 自动读取正文字号 ----
-            # 尝试从 run 中找字号（通常 run.font.size 才有真实值）
-            font_size = None
-            for run in p.runs:
-                if run.font.size:
-                    font_size = run.font.size
-                    break
+            # 只要满足其一，就认定是标题，强制顶格
+            if level_by_regex > 0 or has_outline:
+                fmt = p.paragraph_format
+                fmt.first_line_indent = Pt(0)
+                fmt.left_indent = Pt(0)
+                fmt.hanging_indent = Pt(0)
+                p.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                continue
 
-            # 如果整段都没有设置字号（极少见），用默认 16pt
-            if font_size is None:
-                font_size = Pt(16)
-
-            # ---- Word 的“2 字符缩进”计算方式 ----
-            # 1 字符 ≈ 字号
-            # 2 字符 = 字号 × 2
-            two_char_indent = font_size * 2
-
-            # -------------------------
-            # 应用格式
-            # -------------------------
-
-            # 顶格：清空左缩进
             fmt.left_indent = Pt(0)
-
-            # 首行缩进 = 2 字符宽度
             fmt.first_line_indent = two_char_indent
-
-            # 统一左对齐
-            p.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            p.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
 
     # ----------------------------------------------------------------------
     # 保存文档
@@ -411,7 +528,9 @@ class WordFormatter:
                 level = self._detect_level(para.text)
                 self._apply_style(para, level, doc)
 
-
+            # 修复图片 + 固定行距冲突
+            self.adjust_line_spacing_for_images(doc)
+            # 段落缩进，以及 两端对齐
             self._normalize_paragraph_indent(doc)
             # ----------------- 5. 处理已有图题/表题 -----------------
             self._preprocess_captions(doc)

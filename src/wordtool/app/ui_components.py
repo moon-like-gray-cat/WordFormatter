@@ -40,6 +40,10 @@ class WordFormatterUI:
             "1", "1.","1.1","1.1.1","1.1.1.1",
             "a", "a.", "A", "A.", "①", "I", "I.", "（I）"
         ]
+        self.common_fonts = [
+            "宋体", "黑体", "微软雅黑", "等线", "楷体",
+            "仿宋_GB2312", "楷体_GB2312", "方正小标宋简体", "华仪劲楷"
+        ]
 
         # 字号映射
         self.font_size_map = {
@@ -105,7 +109,8 @@ class WordFormatterUI:
             cb_format.pack(side="left", padx=2)
 
             ttk.Label(row, text="字体").pack(side="left", padx=(5, 2))
-            cb_font = ttk.Combobox(row, values=["宋体", "黑体", "微软雅黑", "楷体","等线"], width=10)
+            # cb_font = ttk.Combobox(row, values=["宋体", "黑体", "微软雅黑", "楷体","等线"], width=10)
+            cb_font = ttk.Combobox(row, values=self.common_fonts, width=10)
             cb_font.pack(side="left", padx=2)
 
             ttk.Label(row, text="字号").pack(side="left", padx=(5, 2))
@@ -131,7 +136,8 @@ class WordFormatterUI:
         bf.pack(fill="x", pady=5)
 
         ttk.Label(bf, text="字体").pack(side="left")
-        self.body_font = ttk.Combobox(bf, values=["宋体", "黑体", "微软雅黑","等线"], width=10)
+        # self.body_font = ttk.Combobox(bf, values=["宋体", "黑体", "微软雅黑","等线"], width=10)
+        self.body_font = ttk.Combobox(bf, values=self.common_fonts, width=10)
         self.body_font.pack(side="left", padx=5)
 
         ttk.Label(bf, text="字号").pack(side="left", padx=(5, 2))
@@ -153,7 +159,7 @@ class WordFormatterUI:
 
     # 右侧：图表标题设置（合并图题和表题）
     def _build_right(self, parent):
-        rf = ttk.LabelFrame(parent, text="图表标题设置", padding=10)
+        rf = ttk.LabelFrame(parent, text="图表标题/西文设置", padding=10)
         rf.grid(row=0, column=1, sticky="nsew")
 
         # 让右侧框架内部可以扩展
@@ -169,7 +175,8 @@ class WordFormatterUI:
 
         # 字体设置
         ttk.Label(row_frame, text="字体").grid(row=0, column=1, sticky="w", padx=(0, 2))
-        self.caption_font = ttk.Combobox(row_frame, values=["宋体", "黑体", "微软雅黑", "楷体","等线"], width=10)
+        # self.caption_font = ttk.Combobox(row_frame, values=["宋体", "黑体", "微软雅黑", "楷体","等线"], width=10)
+        self.caption_font = ttk.Combobox(row_frame, values=self.common_fonts, width=10)
         self.caption_font.grid(row=0, column=2, sticky="w", padx=2)
 
         # 字号设置
@@ -201,6 +208,26 @@ class WordFormatterUI:
         note_label = ttk.Label(rf, text="注：图表标题包括图题和表题，统一设置格式", font=("", 9))
         note_label.grid(row=2, column=0, sticky="w", pady=(10, 0))
 
+        # 第三行：西文字体设置
+        row_frame3 = ttk.Frame(rf)
+        row_frame3.grid(row=2, column=0, sticky="ew", pady=10)
+        row_frame3.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(row_frame3, text="西文设置", width=10).grid(row=0, column=0, sticky="w", padx=(0, 5))
+
+        ttk.Label(row_frame3, text="字体").grid(row=0, column=1, sticky="w", padx=(0, 2))
+        self.en_font = ttk.Combobox(row_frame3, values=["Times New Roman", "Consolas"], width=10)
+        self.en_font.grid(row=0, column=2, sticky="w", padx=2)
+
+        # ttk.Label(row_frame3, text="字号").grid(row=0, column=3, sticky="w", padx=(10, 2))
+        #
+        # self.en_size = ttk.Combobox(row_frame3, values=list(self.font_size_map.keys()), width=12)
+        # self.en_size.grid(row=0, column=4, sticky="w", padx=2)
+
+        # 修改说明文本的行号（由 row=2 改为 row=3）
+        note_label.grid(row=3, column=0, sticky="w", pady=(10, 0))
+
+
     # 底部按钮
     def _build_bottom(self, parent):
         bottom = ttk.Frame(parent, padding=10)
@@ -218,7 +245,13 @@ class WordFormatterUI:
         self.btn_choose.pack(side="left", padx=5)
         self.btn_output = ttk.Button(left_btn_frame, text="输出路径")
         self.btn_output.pack(side="left", padx=5)
+        # 3. 导入配置按钮
+        self.btn_import = ttk.Button(left_btn_frame, text="导入配置")
+        self.btn_import.pack(side="left", padx=5)
 
+        # 4. 保存当前配置按钮
+        self.btn_export = ttk.Button(left_btn_frame, text="保存当前配置")
+        self.btn_export.pack(side="left", padx=5)
         # 右侧按钮
         right_btn_frame = ttk.Frame(bottom)
         right_btn_frame.grid(row=0, column=1, sticky="e")
@@ -273,6 +306,11 @@ class WordFormatterUI:
         self.caption_line_rule.set(caption_cfg.get("line_rule", "多倍行距"))
         self.caption_spacing.delete(0, "end")
         self.caption_spacing.insert(0, caption_cfg.get("spacing", "1.25"))
+        # 西文字体
+        en_cfg = cfg.get("en_font", {})
+        self.en_font.set(en_cfg.get("font", "Times New Roman"))
+        # self.en_size.set(en_cfg.get("size", "小四号 (12pt)"))
+
 
     def get_config(self):
         cfg = {
@@ -307,10 +345,17 @@ class WordFormatterUI:
             "line_rule": self.caption_line_rule.get(),
             "spacing": self.caption_spacing.get()
         }
+        # 西文字体
+        cfg["en_font"] = {
+            "font": self.en_font.get()
+            # "size": self.en_size.get()
+        }
+
         # win32是否启用的选项
         cfg["options"] = {
             "expand_numbering": self.expand_numbering_var.get()
         }
+
         return cfg
 
     def run(self):
